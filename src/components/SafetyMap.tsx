@@ -19,24 +19,19 @@ const DefaultImage = L.icon({
   shadowSize: [41, 41],
 });
 L.Marker.prototype.options.icon = DefaultImage;
+
 import {
   Shield,
   Zap,
   Compass,
   AlertTriangle,
-  Lightbulb,
-  LightbulbOff,
   Navigation,
   Store,
-  Plus,
-  Minus,
   Clock,
-  MapPin,
   CheckCircle,
   XCircle,
   Locate,
   Moon,
-  Globe,
   RefreshCw,
 } from 'lucide-react';
 
@@ -54,8 +49,6 @@ export const SafetyMap: React.FC<SafetyMapProps> = ({ onStartNavigation }) => {
     setSelectedPOI,
     navigateToPOI,
     userLocation,
-    updateUserLocation,
-    streetSegments,
     isNavigating,
     stopNavigation,
   } = useApp();
@@ -65,8 +58,6 @@ export const SafetyMap: React.FC<SafetyMapProps> = ({ onStartNavigation }) => {
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
   const userMarkerRef = useRef<L.Marker | null>(null);
 
-  const [showLights, setShowLights] = useState<boolean>(true);
-  const [showDarkSpots, setShowDarkSpots] = useState<boolean>(true);
   const [showPOIs, setShowPOIs] = useState<boolean>(true);
   const [showNightLights, setShowNightLights] = useState<boolean>(false);
   const [overpassShops, setOverpassShops] = useState<any[]>([]);
@@ -74,69 +65,52 @@ export const SafetyMap: React.FC<SafetyMapProps> = ({ onStartNavigation }) => {
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
   const [lastGpsUpdate, setLastGpsUpdate] = useState<string>('Live active');
 
-  // NASA GIBS Night Lights Layer (VIIRS Black Marble)
   const nasaNightLightsRef = useRef<L.TileLayer | null>(null);
 
-  // 1. Initialize Leaflet Map on Mount
+  // 1. Initialize Leaflet Map once on mount
   useEffect(() => {
     if (!mapContainerRef.current) return;
+    if (mapInstanceRef.current) return;
 
-    if (!mapInstanceRef.current) {
-      const map = L.map(mapContainerRef.current, {
-        zoomControl: false,
-        attributionControl: false,
-      }).setView([userLocation.lat, userLocation.lng], 14);
+    const map = L.map(mapContainerRef.current, {
+      zoomControl: false,
+      attributionControl: false,
+    }).setView([userLocation.lat, userLocation.lng], 14);
 
-      // Base Tile Layer (CartoDB Voyager / OpenStreetMap)
-      const baseLayer = L.tileLayer(
-        'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-        {
-          maxZoom: 19,
-          subdomains: 'abcd',
-        }
-      ).addTo(map);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19,
+      subdomains: 'abcd',
+    }).addTo(map);
 
-      // NASA GIBS Night Lights Layer (VIIRS Black Marble)
-      const nasaNightLayer = L.tileLayer(
-        'https://gibs-{s}.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/{z}/{y}/{x}.png',
-        {
-          maxZoom: 8,
-          subdomains: ['a', 'b', 'c'],
-          opacity: 0.65,
-          attribution: 'NASA GIBS Black Marble',
-        }
-      );
-      nasaNightLightsRef.current = nasaNightLayer;
+    const nasaNightLayer = L.tileLayer(
+      'https://gibs-{s}.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/{z}/{y}/{x}.png',
+      {
+        maxZoom: 8,
+        subdomains: ['a', 'b', 'c'],
+        opacity: 0.65,
+        attribution: 'NASA GIBS Black Marble',
+      }
+    );
+    nasaNightLightsRef.current = nasaNightLayer;
 
-      // Layer for POIs & Shops
-      const markersLayer = L.layerGroup().addTo(map);
-      markersLayerRef.current = markersLayer;
+    const markersLayer = L.layerGroup().addTo(map);
+    markersLayerRef.current = markersLayer;
 
-      mapInstanceRef.current = map;
+    mapInstanceRef.current = map;
 
-      // Call invalidateSize on mount to prevent grey/blank tile glitches
-      setTimeout(() => {
-        map.invalidateSize();
-      }, 150);
+    setTimeout(() => {
+      map.invalidateSize();
+    }, 150);
 
-      // Window resize handler
-      const handleResize = () => {
-        map.invalidateSize();
-      };
-      window.addEventListener('resize', handleResize);
-
-      return () => {
-        window.removeEventListener('resize', handleResize);
-        map.remove();
-        mapInstanceRef.current = null;
-      };
-    }
+    const handleResize = () => {
+      map.invalidateSize();
+    };
+    window.addEventListener('resize', handleResize);
 
     return () => {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
+      window.removeEventListener('resize', handleResize);
+      map.remove();
+      mapInstanceRef.current = null;
     };
   }, []);
 
@@ -155,10 +129,7 @@ export const SafetyMap: React.FC<SafetyMapProps> = ({ onStartNavigation }) => {
 
   // 3. Live Geolocation Tracking via navigator.geolocation.watchPosition
   useEffect(() => {
-    if (!('geolocation' in navigator)) {
-      console.warn('Geolocation is not supported by this browser');
-      return;
-    }
+    if (!('geolocation' in navigator)) return;
 
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
@@ -166,10 +137,6 @@ export const SafetyMap: React.FC<SafetyMapProps> = ({ onStartNavigation }) => {
         setGpsAccuracy(Math.round(accuracy));
         setLastGpsUpdate(new Date().toLocaleTimeString());
 
-        // Update App Context and userLocation
-        updateUserLocation(latitude, longitude, `GPS Accuracy: ±${Math.round(accuracy)}m`);
-
-        // Update Leaflet User Marker
         const map = mapInstanceRef.current;
         if (map) {
           const newLatLng = new L.LatLng(latitude, longitude);
@@ -178,7 +145,7 @@ export const SafetyMap: React.FC<SafetyMapProps> = ({ onStartNavigation }) => {
           } else {
             const userIcon = L.divIcon({
               className: 'custom-user-pin',
-              html: `<div style="background-color: #E65100; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 12px rgba(230,81,0,0.8); animation: pulse 2s infinite;"></div>`,
+              html: `<div style="background-color: #E65100; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 12px rgba(230,81,0,0.8);"></div>`,
               iconSize: [20, 20],
               iconAnchor: [10, 10],
             });
@@ -193,8 +160,8 @@ export const SafetyMap: React.FC<SafetyMapProps> = ({ onStartNavigation }) => {
       },
       {
         enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 3000,
+        timeout: 20000,
+        maximumAge: 5000,
       }
     );
 
@@ -221,7 +188,7 @@ export const SafetyMap: React.FC<SafetyMapProps> = ({ onStartNavigation }) => {
         node["shop"](${south},${west},${north},${east});
         node["amenity"~"pharmacy|police|hospital|convenience|supermarket"](${south},${west},${north},${east});
       );
-      out body 60;
+      out body 50;
     `;
 
     try {
@@ -230,9 +197,7 @@ export const SafetyMap: React.FC<SafetyMapProps> = ({ onStartNavigation }) => {
         body: overpassQuery,
       });
 
-      if (!response.ok) {
-        throw new Error(`Overpass API error: ${response.statusText}`);
-      }
+      if (!response.ok) throw new Error('Overpass fetch failed');
 
       const data = await response.json();
       const fetchedShops = (data.elements || []).map((el: any) => ({
@@ -252,13 +217,12 @@ export const SafetyMap: React.FC<SafetyMapProps> = ({ onStartNavigation }) => {
 
       setOverpassShops(fetchedShops);
     } catch (err) {
-      console.warn('Failed to fetch from Overpass API (falling back to local POIs):', err);
+      console.warn('Overpass API fallback:', err);
     } finally {
       setIsFetchingShops(false);
     }
   };
 
-  // Fetch shops on map move end or mount
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
@@ -271,19 +235,24 @@ export const SafetyMap: React.FC<SafetyMapProps> = ({ onStartNavigation }) => {
     };
   }, []);
 
-  // 5. Render POIs & Overpass Shops on Leaflet Map
+  // 5. Render POIs & Overpass Shops
   useEffect(() => {
     const markersLayer = markersLayerRef.current;
     if (!markersLayer) return;
 
     markersLayer.clearLayers();
-
     const allDisplayPOIs = showPOIs ? [...pois, ...overpassShops] : [];
 
     allDisplayPOIs.forEach((poi) => {
       if (!poi.lat || !poi.lng) return;
 
-      const color = poi.isOpen ? (poi.category === 'police' ? '#1565C0' : poi.category === 'pharmacy' ? '#2E7D32' : '#F57C00') : '#9E9E9E';
+      const color = poi.isOpen
+        ? poi.category === 'police'
+          ? '#1565C0'
+          : poi.category === 'pharmacy'
+          ? '#2E7D32'
+          : '#F57C00'
+        : '#9E9E9E';
 
       const customIcon = L.divIcon({
         className: 'custom-poi-marker',
@@ -322,10 +291,9 @@ export const SafetyMap: React.FC<SafetyMapProps> = ({ onStartNavigation }) => {
 
   return (
     <div className="relative w-full h-[580px] sm:h-[640px] rounded-3xl overflow-hidden border-2 border-[#E8DFD1] bg-[#F7F2EA] shadow-lg select-none">
-      {/* LEAFLET MAP CONTAINER */}
       <div ref={mapContainerRef} className="w-full h-full z-10" />
 
-      {/* MAP LAYER CONTROLS (Top Right) */}
+      {/* MAP LAYER CONTROLS */}
       <div className="absolute top-4 right-4 z-30 flex flex-col gap-2 bg-white/95 backdrop-blur-md p-2 rounded-2xl border border-[#E8DFD1] shadow-md">
         <div className="flex items-center gap-1.5 pb-1 border-b border-stone-200">
           <button
@@ -345,7 +313,6 @@ export const SafetyMap: React.FC<SafetyMapProps> = ({ onStartNavigation }) => {
           </button>
         </div>
 
-        {/* Layer Toggles */}
         <div className="flex flex-col gap-1 text-[11px] pt-1">
           <button
             onClick={() => setShowNightLights(!showNightLights)}
@@ -381,7 +348,7 @@ export const SafetyMap: React.FC<SafetyMapProps> = ({ onStartNavigation }) => {
         )}
       </div>
 
-      {/* ROUTE COMPARISON SELECTOR PILLS (Top Left) */}
+      {/* ROUTE COMPARISON SELECTOR PILLS */}
       <div className="absolute top-4 left-4 z-30 flex flex-wrap gap-1.5 max-w-sm sm:max-w-md pointer-events-auto">
         {availableRoutes.map((r) => {
           const isSelected = currentRoute.id === r.id;
