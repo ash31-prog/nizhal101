@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">NIZHAL</string>
+    <string name="title_activity_main">NIZHAL</string>
+    <string name="package_name">in.nizhal.app</string>
+    <string name="custom_url_scheme">in.nizhal.app</string>
+</resources>

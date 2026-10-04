@@ -1,0 +1,186 @@
+openapi: 3.1.0
+info:
+  title: NIZHAL API
+  version: "1.0.0"
+  description: |
+    The entire backend surface of NIZHAL is five endpoints.
+
+    Design constraint: no endpoint accepts or returns anything that
+    identifies a person. There is no /users, no /login, no /location.
+    The relay accepts an opaque ciphertext envelope and forwards it.
+
+    The reference client satisfies this same contract *in the browser*
+    (src/services/api/localApi.ts), which is why the product deploys as
+    a static bundle and keeps working in airplane mode.
+servers:
+  - url: /api
+
+paths:
+  /risk/tiles:
+    post:
+      summary: Scored street segments for a bounding box and hour
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bbox, hour]
+              properties:
+                bbox: { type: array, items: { type: number }, minItems: 4, maxItems: 4 }
+                hour: { type: integer, minimum: 0, maximum: 23 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RiskTileResponse" }
+
+  /routes:
+    post:
+      summary: Pareto-optimal routes over (time, risk)
+      description: |
+        Never returns a single "best" route. Returns the non-dominated
+        front so the user sees the trade-off and chooses.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to, hour]
+              properties:
+                from: { type: integer }
+                to: { type: integer }
+                hour: { type: integer, minimum: 0, maximum: 23 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RouteResponse" }
+
+  /relay/alert:
+    post:
+      summary: Submit an encrypted alert envelope
+      description: |
+        The only write endpoint in the system. The server cannot decrypt
+        the payload, does not know who sent it, and stores no location.
+        Rate limited per recipientTag.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RelayEnvelope" }
+      responses:
+        "200":
+          description: Accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RelayAck" }
+        "429": { description: Rate limited }
+
+  /city/works:
+    get:
+      summary: Interventions ranked by risk reduction per rupee
+      parameters:
+        - { in: query, name: ward,  schema: { type: string }, required: true }
+        - { in: query, name: lamps, schema: { type: integer }, required: true }
+        - { in: query, name: hour,  schema: { type: integer }, required: true }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorksPlanResponse" }
+
+  /places:
+    get:
+      summary: Open, lit, staffed places near a point
+      parameters:
+        - { in: query, name: lat,  schema: { type: number }, required: true }
+        - { in: query, name: lon,  schema: { type: number }, required: true }
+        - { in: query, name: hour, schema: { type: integer }, required: true }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SafePlace" }
+
+components:
+  schemas:
+    RiskSegment:
+      type: object
+      properties:
+        id: { type: integer }
+        risk: { type: number, minimum: 0, maximum: 100 }
+        lit: { type: boolean }
+        name: { type: string }
+        provenance: { type: string, enum: [osm, model], description: measured vs inferred }
+    RiskTileResponse:
+      type: object
+      properties:
+        generatedAt: { type: string, format: date-time }
+        hour: { type: integer }
+        segments: { type: array, items: { $ref: "#/components/schemas/RiskSegment" } }
+        attribution: { type: string }
+    RouteOption:
+      type: object
+      properties:
+        label: { type: string, enum: [fastest, balanced, safest] }
+        minutes: { type: integer }
+        metres: { type: integer }
+        risk: { type: number }
+        worstSegment: { type: number }
+        unlitMetres: { type: integer }
+        amenitiesOnRoute: { type: integer }
+        nodes: { type: array, items: { type: integer } }
+    RouteResponse:
+      type: object
+      properties:
+        options: { type: array, items: { $ref: "#/components/schemas/RouteOption" } }
+        paretoOptimal: { type: boolean, const: true }
+    RelayEnvelope:
+      type: object
+      required: [v, recipientTag, iv, ciphertext, signature, createdAt]
+      properties:
+        v: { type: integer, const: 1 }
+        recipientTag: { type: string, description: random per alert, unlinkable }
+        iv: { type: string, description: base64 AES-GCM IV }
+        ciphertext: { type: string, description: base64 AES-256-GCM }
+        signature: { type: string, description: base64 ECDSA P-256 }
+        createdAt: { type: integer }
+    RelayAck:
+      type: object
+      properties:
+        accepted: { type: boolean }
+        id: { type: string }
+        deliveredVia: { type: string, enum: [push, sms, queued] }
+    DarkSpot:
+      type: object
+      properties:
+        segmentId: { type: integer }
+        street: { type: string }
+        riskNow: { type: number }
+        riskAfter: { type: number }
+        lampsRequired: { type: integer }
+        riskReducedPerLamp: { type: number }
+    WorksPlanResponse:
+      type: object
+      properties:
+        ward: { type: string }
+        budgetLamps: { type: integer }
+        ranked: { type: array, items: { $ref: "#/components/schemas/DarkSpot" } }
+        totalRiskRemoved: { type: number }
+    SafePlace:
+      type: object
+      properties:
+        name: { type: string }
+        kind: { type: string }
+        metres: { type: integer }
+        openNow: { type: boolean }
+        lat: { type: number }
+        lon: { type: number }
