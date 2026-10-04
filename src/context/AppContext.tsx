@@ -57,6 +57,7 @@ interface AppContextType {
   toggleMotionMonitoring: () => Promise<void>;
   requestAllPermissions: () => Promise<boolean>;
   simulateSensorAction: (type: 'shake' | 'fall' | 'scream' | 'cancel') => void;
+  updateUserLocation: (lat: number, lng: number, address?: string) => void;
 }
 
 const DEFAULT_PROFILE: UserProfile = {
@@ -338,6 +339,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const updateUserLocation = (lat: number, lng: number, address = 'Live Geolocation Position') => {
+    setUserLocation((prev) => ({
+      ...prev,
+      lat: Number(lat.toFixed(5)),
+      lng: Number(lng.toFixed(5)),
+      address,
+      x: 400 + (lng - 80.27) * 10000,
+      y: 300 - (lat - 13.0) * 10000,
+    }));
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -376,6 +388,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleMotionMonitoring,
         requestAllPermissions,
         simulateSensorAction,
+        updateUserLocation,
       }}
     >
       {children}

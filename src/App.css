@@ -1,3 +1,10 @@
+.leaflet-container {
+  height: 100%;
+  min-height: 400px;
+  width: 100%;
+  z-index: 10;
+}
+
 .counter {
   font-size: 16px;
   padding: 5px 10px;
